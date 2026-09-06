@@ -32,14 +32,13 @@ For consecutive equity values $E_t$, the engine uses simple period returns
 $r_t=E_t/E_{t-1}-1$ and calculates the per-period Sharpe ratio as
 
 $$
-\operatorname{Sharpe}=\frac{\operatorname{mean}(r_t-r_f)}
-{\operatorname{std}(r_t)},
+S=\frac{\mu(r_t-r_f)}{\sigma(r_t)},
 $$
 
-where $r_f$ is the simple risk-free return on the **same interval** and the
-standard deviation is the sample standard deviation (`ddof=1`). A Sharpe ratio
-is undefined, and reported as `nan`, when there are fewer than two returns or
-zero observed volatility.
+where $S$ is the Sharpe ratio, $r_f$ is the simple risk-free return on the
+**same interval**, $\mu$ denotes the sample mean, and $\sigma$ denotes the
+sample standard deviation (`ddof=1`). A Sharpe ratio is undefined, and reported
+as `nan`, when there are fewer than two returns or zero observed volatility.
 
 The bundled demonstration consists of synthetic flips rather than dated market
 returns, so the CLI reports metrics **per trade**. For an externally supplied
