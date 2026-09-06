@@ -182,8 +182,7 @@ are not magically one-sided—the exact interior regret is
 
 $$
 g_{p_0}(f(\hat p))-g_{p_0}(f(p_0))
-=-D_{\mathrm{KL}}(\operatorname{Bern}(p_0)\Vert
-\operatorname{Bern}(\hat p)).
+=-D_{\mathrm{KL}}(\mathrm{Bern}(p_0)\Vert \mathrm{Bern}(\hat p)).
 $$
 
 The practical asymmetry comes from the solvency boundary: optimistic estimates
@@ -196,7 +195,7 @@ The continuous objective has the risk term
 $$
 w^\mathsf{T}\Sigma w=
 \sum_i\sigma_i^2w_i^2+
-2\sum_{i<j}\rho_{ij}\sigma_i\sigma_jw_iw_j.
+2\sum_{i \lt j}\rho_{ij}\sigma_i\sigma_jw_iw_j.
 $$
 
 High positive correlation between two tech stocks makes the cross term large.
