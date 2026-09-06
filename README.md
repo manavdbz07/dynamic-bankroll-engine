@@ -17,6 +17,72 @@ The first command creates `kelly_equity_curves.png` from 1,000 seeded,
 even-money flips with a 55% win probability. All three strategies see the exact
 same outcomes, so path differences come from sizing rather than luck.
 
+## Performance analytics
+
+`calculate_performance_metrics(...)` turns any strictly positive equity curve
+into transparent, reusable risk/return statistics:
+
+- total return and geometric mean period return;
+- sample volatility and Sharpe ratio per observation interval;
+- peak-to-trough maximum drawdown; and
+- optional annualized return, volatility, and Sharpe ratio when a real calendar
+  frequency is supplied.
+
+For consecutive equity values $E_t$, the engine uses simple period returns
+$r_t=E_t/E_{t-1}-1$ and calculates the per-period Sharpe ratio as
+
+$$
+\operatorname{Sharpe}=\frac{\operatorname{mean}(r_t-r_f)}
+{\operatorname{std}(r_t)},
+$$
+
+where $r_f$ is the simple risk-free return on the **same interval** and the
+standard deviation is the sample standard deviation (`ddof=1`). A Sharpe ratio
+is undefined, and reported as `nan`, when there are fewer than two returns or
+zero observed volatility.
+
+The bundled demonstration consists of synthetic flips rather than dated market
+returns, so the CLI reports metrics **per trade**. For an externally supplied
+equity curve at a known cadence, opt into conventional annualization through
+the reusable API:
+
+```python
+from bankroll_engine import calculate_performance_metrics
+
+metrics = calculate_performance_metrics(
+    daily_equity,
+    risk_free_rate_per_period=(1.04 ** (1 / 252)) - 1,
+    periods_per_year=252,
+)
+```
+
+Annualized volatility and Sharpe use the standard square-root-of-time
+assumption; annualized return compounds the geometric per-period return. Do
+not annualize the default synthetic flip results or present them as a backtest.
+
+### Seeded synthetic example — not historical investment performance
+
+With the default seed (`20260906`) and a zero per-trade risk-free rate, the
+1,000-trade simulation produces 536 wins (53.6%). Starting from $100, the
+reproducible path reports:
+
+| Strategy | Final bankroll | Total return | Volatility/trade | Sharpe (trade returns) | Max drawdown |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Full Kelly | $901.58 | 801.6% | 9.98% | 0.0722 | 90.5% |
+| Half Kelly | $1,050.07 | 950.1% | 4.99% | 0.0722 | 64.4% |
+| Fixed stake | $460.00 | 360.0% | 3.13% | 0.0644 | 41.9% |
+
+Those figures demonstrate the reporting pipeline on one controlled sample;
+they do not establish a trading strategy's expected real-world returns.
+
+## CV-ready project bullets
+
+Use one or two of these, tailored to the role:
+
+- Built a Python Kelly allocation engine with exact binary sizing and constrained multivariate optimization; generated $2n$ moment-matched return scenarios and used SLSQP to enforce long-only, cash, and position limits.
+- Added risk analytics for compound return, volatility, Sharpe ratio, and maximum drawdown to compare 3 sizing strategies across a reproducible 1,000-trial simulation; the reusable API supports frequency-aware annualization for dated equity curves and is validated by 18 unit tests.
+- Modeled a correlated 3-asset allocation example in which 0.90 correlation between two tech assets reduced their combined Full-Kelly allocation from about 74% to 50% versus a diagonal-covariance assumption.
+
 ## Conventions
 
 `net_odds=b` means that a $1 winning stake earns $b in profit; a losing stake

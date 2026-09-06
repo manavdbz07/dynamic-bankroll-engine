@@ -587,12 +587,145 @@ def run_coin_flip_comparison(
 def max_drawdown(equity: Sequence[float] | FloatArray) -> float:
     """Return the largest peak-to-trough drawdown as a fraction of the peak."""
     values = np.asarray(equity, dtype=float)
-    if values.ndim != 1 or values.size == 0 or np.any(values < 0.0):
-        raise ValueError("equity must be a non-empty, non-negative vector.")
+    if (
+        values.ndim != 1
+        or values.size == 0
+        or not np.all(np.isfinite(values))
+        or np.any(values < 0.0)
+    ):
+        raise ValueError("equity must be a finite, non-empty, non-negative vector.")
     peaks = np.maximum.accumulate(values)
     with np.errstate(divide="ignore", invalid="ignore"):
         drawdowns = np.where(peaks > 0.0, 1.0 - values / peaks, 0.0)
     return float(np.max(drawdowns))
+
+
+@dataclass(frozen=True)
+class PerformanceMetrics:
+    """Risk and return statistics calculated from a positive equity curve.
+
+    The base metrics are expressed per observation interval.  When
+    ``periods_per_year`` is supplied to :func:`calculate_performance_metrics`,
+    the annualized fields use conventional square-root-of-time scaling for
+    volatility and Sharpe ratio.  That assumption should only be used when the
+    intervals represent a consistent real-world cadence (for example, daily
+    returns), rather than the synthetic coin flips used by the default demo.
+    """
+
+    periods: int
+    total_return: float
+    compound_return_per_period: float
+    volatility_per_period: float
+    sharpe_ratio_per_period: float
+    max_drawdown: float
+    annualized_return: float | None
+    annualized_volatility: float | None
+    annualized_sharpe_ratio: float | None
+
+
+def calculate_performance_metrics(
+    equity: Sequence[float] | FloatArray,
+    *,
+    risk_free_rate_per_period: float = 0.0,
+    periods_per_year: float | None = None,
+) -> PerformanceMetrics:
+    """Calculate transparent risk/return metrics for consecutive equity values.
+
+    ``risk_free_rate_per_period`` is a simple return on the *same interval* as
+    adjacent observations in ``equity``.  Sharpe ratio is calculated as the
+    arithmetic mean excess simple return divided by sample return volatility
+    (``ddof=1``).  Its value is ``nan`` if fewer than two returns are available
+    or every observed return is identical, because a sample volatility-based
+    Sharpe ratio is then undefined.
+
+    Provide ``periods_per_year`` only when an interval has a genuine calendar
+    frequency.  Annualized return compounds the geometric per-period return;
+    annualized volatility and Sharpe ratio use the standard iid
+    square-root-of-time convention.  The function requires strictly positive
+    equity values so every period return is well-defined; a ruined path should
+    be reported separately rather than assigned a misleading Sharpe ratio.
+    """
+    values = np.asarray(equity, dtype=float)
+    if (
+        values.ndim != 1
+        or values.size < 2
+        or not np.all(np.isfinite(values))
+        or np.any(values <= 0.0)
+    ):
+        raise ValueError("equity must be a finite, strictly positive vector with at least two values.")
+
+    risk_free = float(risk_free_rate_per_period)
+    if not np.isfinite(risk_free) or risk_free <= -1.0:
+        raise ValueError("risk_free_rate_per_period must be finite and greater than -1.")
+
+    annualization: float | None = None
+    if periods_per_year is not None:
+        annualization = float(periods_per_year)
+        if not np.isfinite(annualization) or annualization <= 0.0:
+            raise ValueError("periods_per_year must be a positive finite number when provided.")
+
+    with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+        period_returns = values[1:] / values[:-1] - 1.0
+    if not np.all(np.isfinite(period_returns)):
+        raise ValueError("equity values produce non-finite period returns.")
+    periods = int(period_returns.size)
+    with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+        total_return = float(values[-1] / values[0] - 1.0)
+        compound_return = float(np.expm1(np.mean(np.log1p(period_returns))))
+    if not np.isfinite(total_return) or not np.isfinite(compound_return):
+        raise ValueError("equity values produce non-finite return metrics.")
+
+    if periods < 2:
+        volatility = float("nan")
+        sharpe_ratio = float("nan")
+    else:
+        with np.errstate(over="ignore", invalid="ignore"):
+            volatility = float(np.std(period_returns, ddof=1))
+        if not np.isfinite(volatility):
+            raise ValueError("equity values produce non-finite return volatility.")
+        sharpe_ratio = (
+            float(np.mean(period_returns - risk_free) / volatility)
+            if volatility > 0.0
+            else float("nan")
+        )
+        if not np.isfinite(sharpe_ratio) and volatility > 0.0:
+            raise ValueError("equity values produce a non-finite Sharpe ratio.")
+
+    if annualization is None:
+        annualized_return = None
+        annualized_volatility = None
+        annualized_sharpe = None
+    else:
+        with np.errstate(over="ignore", invalid="ignore"):
+            annualized_return = float(np.expm1(np.log1p(compound_return) * annualization))
+            annualized_volatility = (
+                float(volatility * np.sqrt(annualization))
+                if np.isfinite(volatility)
+                else float("nan")
+            )
+            annualized_sharpe = (
+                float(sharpe_ratio * np.sqrt(annualization))
+                if np.isfinite(sharpe_ratio)
+                else float("nan")
+            )
+        if not np.isfinite(annualized_return):
+            raise ValueError("annualization produces a non-finite return.")
+        if np.isfinite(volatility) and not np.isfinite(annualized_volatility):
+            raise ValueError("annualization produces a non-finite volatility.")
+        if np.isfinite(sharpe_ratio) and not np.isfinite(annualized_sharpe):
+            raise ValueError("annualization produces a non-finite Sharpe ratio.")
+
+    return PerformanceMetrics(
+        periods=periods,
+        total_return=total_return,
+        compound_return_per_period=compound_return,
+        volatility_per_period=volatility,
+        sharpe_ratio_per_period=sharpe_ratio,
+        max_drawdown=max_drawdown(values),
+        annualized_return=annualized_return,
+        annualized_volatility=annualized_volatility,
+        annualized_sharpe_ratio=annualized_sharpe,
+    )
 
 
 def plot_equity_curves(simulation: KellySimulation, output_path: str | Path) -> Path:
@@ -628,7 +761,9 @@ def plot_equity_curves(simulation: KellySimulation, output_path: str | Path) -> 
         label=f"Naive fixed stake (${simulation.fixed_stake:g} per trade)",
     )
     axis.set_yscale("log")
-    axis.set_title("Kelly bankroll paths on the same 1,000 flips", weight="bold")
+    axis.set_title(
+        f"Kelly bankroll paths on the same {simulation.outcomes.size:,} flips", weight="bold"
+    )
     axis.set_xlabel("Trade number")
     axis.set_ylabel("Bankroll (log scale)")
     axis.grid(True, which="both", alpha=0.25)
@@ -666,6 +801,11 @@ def _demo_multi_asset_problem() -> tuple[FloatArray, FloatArray]:
     return mu, covariance
 
 
+def _format_metric(value: float, format_spec: str) -> str:
+    """Format a finite statistic, using N/A for an undefined sample metric."""
+    return format(value, format_spec) if np.isfinite(value) else "N/A"
+
+
 def main() -> None:
     """Run the reproducible simulation and print the multi-asset allocation."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -685,14 +825,32 @@ def main() -> None:
     print(f"  Full Kelly fraction: {simulation.full_kelly_fraction:.2%}")
     print(f"  Half-Kelly fraction: {simulation.half_kelly_fraction:.2%}")
     print("\nSimulation statistics")
+    print(
+        f"  Empirical win rate: {np.mean(simulation.outcomes):.1%} "
+        f"({np.count_nonzero(simulation.outcomes)}/{simulation.outcomes.size})"
+    )
     for label, curve in (
         ("100% Kelly", simulation.full_kelly_equity),
         ("Half-Kelly", simulation.half_kelly_equity),
         ("Fixed stake", simulation.fixed_stake_equity),
     ):
+        if np.any(curve <= 0.0):
+            print(
+                f"  {label:12s} final=${curve[-1]:,.2f}; "
+                f"total return={curve[-1] / curve[0] - 1.0:.1%}; "
+                "volatility/trade=N/A; Sharpe (trade returns)=N/A (ruined path); "
+                f"max drawdown={max_drawdown(curve):.1%}"
+            )
+            continue
+        metrics = calculate_performance_metrics(
+            curve,
+        )
         print(
             f"  {label:12s} final=${curve[-1]:,.2f}; "
-            f"max drawdown={max_drawdown(curve):.1%}"
+            f"total return={metrics.total_return:.1%}; "
+            f"volatility/trade={_format_metric(metrics.volatility_per_period, '.2%')}; "
+            f"Sharpe (trade returns)={_format_metric(metrics.sharpe_ratio_per_period, '.4f')}; "
+            f"max drawdown={metrics.max_drawdown:.1%}"
         )
     print(f"\nWrote equity plot: {output.resolve()}")
 
