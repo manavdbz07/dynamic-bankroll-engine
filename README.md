@@ -26,49 +26,49 @@ currency stake in the simulation.
 
 ## Exact discrete Kelly derivation
 
-Let the current bankroll be \(W\), win probability be \(p\), loss probability
-be \(q=1-p\), and the fraction wagered be \(f\). A win and a loss produce
+Let the current bankroll be $W$, win probability be $p$, loss probability
+be $q=1-p$, and the fraction wagered be $f$. A win and a loss produce
 
-\[
+$$
 W' = W(1+bf) \quad\text{and}\quad W' = W(1-f),
-\]
+$$
 
 respectively. The per-bet expected log growth is therefore
 
-\[
+$$
 g(f)=p\log(1+bf)+q\log(1-f), \qquad 0\le f<1.
-\]
+$$
 
 Differentiate rather than optimizing expected dollars:
 
-\[
+$$
 g'(f)=\frac{pb}{1+bf}-\frac{q}{1-f}.
-\]
+$$
 
 Setting the derivative to zero and cross-multiplying gives
 
-\[
+$$
 pb(1-f)=q(1+bf),
-\]
+$$
 
-\[
+$$
 pb-q=bf(p+q)=bf,
-\]
+$$
 
 so the stationary point is
 
-\[
+$$
 \boxed{f^*=\frac{pb-q}{b}=p-\frac{q}{b}}.
-\]
+$$
 
 It is the unique maximum because
 
-\[
+$$
 g''(f)=-\frac{pb^2}{(1+bf)^2}-\frac{q}{(1-f)^2}<0.
-\]
+$$
 
 `kelly_fraction(p, b, fractional_kelly=0.5)` applies the safety multiplier
-after enforcing the long-only no-bet rule, \(\max(0,f^*)\). Thus an even-money
+after enforcing the long-only no-bet rule, $\max(0,f^*)$. Thus an even-money
 55% wager gives Full Kelly = 10% and Half-Kelly = 5%.
 
 ## Two explicit multi-asset models
@@ -79,22 +79,22 @@ instead of hiding it.
 
 `optimize_multivariate_kelly(mu, covariance, ...)` first builds six equally
 likely scenarios for three assets (in general, `2n` for `n` assets). Their
-standardized shocks are \(+\sqrt{n}e_i\) and \(-\sqrt{n}e_i\). With
-\(LL^\mathsf{T}=\Sigma\), the states
+standardized shocks are $+\sqrt{n}e_i$ and $-\sqrt{n}e_i$. With
+$LL^\mathsf{T}=\Sigma$, the states
 
-\[
+$$
 R_s=\mu+z_sL^\mathsf{T}
-\]
+$$
 
 have exactly the input mean and covariance. It then maximizes the fully
 specified one-period objective
 
-\[
+$$
 \sum_s\pi_s\log(1+R_s^\mathsf{T}w)
-\]
+$$
 
 with SLSQP. Any state with a non-positive wealth multiplier returns
-\(-\infty\), which correctly represents bankruptcy under log utility.
+$-\infty$, which correctly represents bankruptcy under log utility.
 
 For the requested continuous model, use
 `optimize_continuous_multivariate_kelly(mu, covariance, ...)`. Here `mu` is an
@@ -102,22 +102,22 @@ arithmetic drift **rate** and `covariance` is an instantaneous covariance
 **rate**, both on the same time scale; the output is a log-growth rate on that
 scale. It assumes
 
-\[
+$$
 \frac{dS_i}{S_i}=\mu_i\,dt+(L\,dB)_i, \qquad LL^\mathsf{T}=\Sigma.
-\]
+$$
 
-With the unused allocation in cash earning \(r_f\), Itô's formula yields the
+With the unused allocation in cash earning $r_f$, Itô's formula yields the
 exact diffusion-model expected log-growth rate
 
-\[
+$$
 G(w)=r_f+w^\mathsf{T}(\mu-r_f\mathbf{1})
 -\frac12 w^\mathsf{T}\Sigma w.
-\]
+$$
 
 The optimizer supplies the analytic gradient
-\(\nabla G=\mu-r_f\mathbf{1}-\Sigma w\), uses
+$\nabla G=\mu-r_f\mathbf{1}-\Sigma w$, uses
 `scipy.optimize.minimize(method="SLSQP")`, and enforces
-\(w_i\ge0\), \(\sum_i w_i\le1\), and optional individual caps. The cash
+$w_i\ge0$, $\sum_i w_i\le1$, and optional individual caps. The cash
 buffer and position caps are intentional risk controls, not merely numerical
 details.
 
@@ -147,44 +147,44 @@ print(allocation.weights)             # [0.125, 0.125, 0.25]
 
 For one binary wager,
 
-\[
+$$
 \mathbb E[W'/W]=p(1+bf)+q(1-f)=1+f(pb-q).
-\]
+$$
 
-That expression is linear in \(f\). If the edge \(pb-q\) is positive, raw-EV
+That expression is linear in $f$. If the edge $pb-q$ is positive, raw-EV
 maximization chooses the largest permitted position, typically all-in
-\(f=1\). A single loss then produces \(W'=0\). Across \(N\) independent
+$f=1$. A single loss then produces $W'=0$. Across $N$ independent
 bets, literal ruin has probability
 
-\[
+$$
 \Pr(\text{ruin by }N)=1-p^N,
-\]
+$$
 
-which approaches one whenever \(p<1\), despite a possibly rising arithmetic
+which approaches one whenever $p<1$, despite a possibly rising arithmetic
 mean bankroll. Rare survivors dominate that mean. Expected log wealth assigns
-\(\log 0=-\infty\), so it maximizes typical compound growth instead. This
+$\log 0=-\infty$, so it maximizes typical compound growth instead. This
 does not make Half-Kelly invulnerable: it avoids literal zero in this bounded
 binary model but can still have severe drawdowns and practical ruin.
 
 ## Why an optimistic probability estimate is dangerous
 
-If the true win probability is \(p_0\) and the engine uses \(\hat p\), then
+If the true win probability is $p_0$ and the engine uses $\hat p$, then
 
-\[
+$$
 f(\hat p)-f(p_0)=\frac{b+1}{b}(\hat p-p_0).
-\]
+$$
 
-Overstating \(p\) directly creates overbetting. The dangerous loss term is
-\(q_0\log(1-f)\), which tends to \(-\infty\) as \(f\) approaches one. In
+Overstating $p$ directly creates overbetting. The dangerous loss term is
+$q_0\log(1-f)$, which tends to $-\infty$ as $f$ approaches one. In
 contrast, a long-only under-estimate drives the allocation toward zero, whose
 worst usual consequence is a finite missed-growth opportunity. Locally, errors
 are not magically one-sided—the exact interior regret is
 
-\[
+$$
 g_{p_0}(f(\hat p))-g_{p_0}(f(p_0))
 =-D_{\mathrm{KL}}(\operatorname{Bern}(p_0)\Vert
 \operatorname{Bern}(\hat p)).
-\]
+$$
 
 The practical asymmetry comes from the solvency boundary: optimistic estimates
 can push exposure toward all-in, where one ordinary loss is catastrophic.
@@ -193,19 +193,19 @@ can push exposure toward all-in, where one ordinary loss is catastrophic.
 
 The continuous objective has the risk term
 
-\[
+$$
 w^\mathsf{T}\Sigma w=
 \sum_i\sigma_i^2w_i^2+
 2\sum_{i<j}\rho_{ij}\sigma_i\sigma_jw_iw_j.
-\]
+$$
 
 High positive correlation between two tech stocks makes the cross term large.
 The marginal log-growth of Tech B falls when Tech A is already held:
 
-\[
+$$
 \frac{\partial G}{\partial w_i}=
 \mu_i-(\Sigma w)_i.
-\]
+$$
 
 In the included example, the 0.90 tech correlation gives a combined Full-Kelly
 tech allocation of 50%; deleting the off-diagonal covariances raises it to
