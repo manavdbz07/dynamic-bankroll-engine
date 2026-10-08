@@ -1,21 +1,3 @@
-#!/usr/bin/env python3
-"""A transparent Dynamic Bankroll Allocation Engine built from first principles.
-
-The single-asset component uses the exact two-outcome Kelly objective.  The
-multi-asset component includes both discrete scenarios and a diffusion solver.
-For one-period returns, it constructs an equally likely distribution whose
-mean and covariance match the supplied inputs exactly, then maximizes expected
-log wealth over it with ``scipy.optimize.minimize``. The continuous-time
-solver instead states a geometric-Brownian model, under which the mean and
-covariance identify expected log growth.
-
-The one-period scenario model uses *simple returns*: ``0.10`` means a 10% gain
-and ``-0.10`` means a 10% loss. The continuous solver instead accepts
-arithmetic drift and covariance *rates* on one consistent time scale. Odds are
-*net odds*: with odds ``b``, a winning stake of $1 earns $b in profit, while a
-losing stake loses $1.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -31,24 +13,21 @@ from scipy.optimize import OptimizeResult, minimize
 FloatArray = NDArray[np.float64]
 
 
-def _validate_probability(value: float, name: str = "probability") -> float:
-    """Return a finite probability, rejecting values outside [0, 1]."""
+def _validate_probability(value: float, name: str = "probability") -> float: # Return a finite probability, rejecting values outside [0, 1].
     value = float(value)
     if not np.isfinite(value) or not 0.0 <= value <= 1.0:
         raise ValueError(f"{name} must be a finite number in [0, 1]; got {value!r}.")
     return value
 
 
-def _validate_fraction(value: float, name: str = "fraction") -> float:
-    """Return a long-only, unlevered bankroll fraction in [0, 1]."""
+def _validate_fraction(value: float, name: str = "fraction") -> float: # Return a long-only, unlevered bankroll fraction in [0, 1].
     value = float(value)
     if not np.isfinite(value) or not 0.0 <= value <= 1.0:
         raise ValueError(f"{name} must be a finite number in [0, 1]; got {value!r}.")
     return value
 
 
-def _validate_net_odds(net_odds: float) -> float:
-    """Validate and return positive net odds ``b``."""
+def _validate_net_odds(net_odds: float) -> float: # Validate and return positive net odds ``b``
     net_odds = float(net_odds)
     if not np.isfinite(net_odds) or net_odds <= 0.0:
         raise ValueError("net_odds must be a positive finite number.")
@@ -59,8 +38,7 @@ def _clean_constrained_weights(
     raw_weights: Sequence[float] | FloatArray,
     max_total_weight: float,
     max_asset_weight: float,
-) -> FloatArray:
-    """Defend the cash and position limits against optimizer round-off only."""
+) -> FloatArray: # Defend the cash and position limits against optimizer round-off only.
     raw = np.asarray(raw_weights, dtype=float)
     tolerance = 1e-8
     if np.any(raw < -tolerance) or np.any(raw > max_asset_weight + tolerance):
@@ -69,8 +47,7 @@ def _clean_constrained_weights(
         raise RuntimeError("Optimizer returned weights above the stated total-weight cap.")
 
     cleaned = np.clip(raw, 0.0, max_asset_weight)
-    # A violation smaller than tolerance is numerical noise.  Scale it back to
-    # the cash budget so a caller never receives an infeasible allocation.
+    # A violation smaller than tolerance is numerical noise.  Scale it back to the cash budget so a caller never receives an infeasible allocation.
     if cleaned.sum() > max_total_weight:
         cleaned *= max_total_weight / cleaned.sum()
     return cleaned
@@ -78,8 +55,7 @@ def _clean_constrained_weights(
 
 def _validated_covariance(
     covariance: Sequence[Sequence[float]] | FloatArray, n_assets: int
-) -> FloatArray:
-    """Validate a covariance matrix and remove negligible PSD round-off noise."""
+) -> FloatArray: # Validate a covariance matrix and remove negligible PSD round-off noise.
     sigma = np.asarray(covariance, dtype=float)
     if sigma.shape != (n_assets, n_assets):
         raise ValueError("covariance must have shape (len(mu), len(mu)).")
@@ -109,16 +85,14 @@ def _validated_covariance(
 def binary_return_distribution(
     win_probability: float, net_odds: float
 ) -> tuple[FloatArray, FloatArray]:
-    """Build the explicit two-state distribution for a binary wager.
-
-    Returns
-    -------
-    probabilities:
-        ``[p, 1 - p]``.
-    simple_returns:
-        A shape ``(2, 1)`` array: the net return is ``b`` on a win and ``-1``
-        on a loss.
-    """
+    # Build the explicit two-state distribution for a binary wager.
+    # Returns
+    # probabilities:
+    #  [p, 1 - p]
+    # simple_returns:
+    #     A shape ``(2, 1)`` array: the net return is ``b`` on a win and ``-1``
+    #     on a loss.
+    
     p = _validate_probability(win_probability, "win_probability")
     b = _validate_net_odds(net_odds)
     probabilities = np.array([p, 1.0 - p], dtype=float)
@@ -131,13 +105,6 @@ def expected_log_growth(
     simple_returns: Sequence[Sequence[float]] | FloatArray,
     probabilities: Sequence[float] | FloatArray,
 ) -> float:
-    """Calculate ``E[log(1 + w.T @ R)]`` for an explicit distribution.
-
-    ``simple_returns`` has one row per state and one column per asset.  The
-    function returns ``-np.inf`` when a state with positive probability makes
-    the portfolio wealth multiplier non-positive.  That is the correct log
-    utility treatment of bankruptcy, rather than a numerical clipping trick.
-    """
     w = np.asarray(weights, dtype=float)
     returns = np.asarray(simple_returns, dtype=float)
     probs = np.asarray(probabilities, dtype=float)
@@ -171,12 +138,11 @@ def kelly_fraction(
     net_odds: float,
     fractional_kelly: float = 1.0,
 ) -> float:
-    """Return the long-only discrete Kelly fraction, optionally scaled down.
+    # Return the long-only discrete Kelly fraction, optionally scaled down.
 
-    The full-Kelly stationary point is ``(p * b - (1 - p)) / b``.  A negative
-    value means that this side of the wager has no edge, so a long-only engine
-    places no wager.  Use ``fractional_kelly=0.5`` for Half-Kelly.
-    """
+    # The full-Kelly stationary point is ``(p * b - (1 - p)) / b``.  A negative
+    # value means that this side of the wager has no edge, so a long-only engine
+    # places no wager.  Use ``fractional_kelly=0.5`` for Half-Kelly.
     p = _validate_probability(win_probability, "win_probability")
     b = _validate_net_odds(net_odds)
     scale = _validate_fraction(fractional_kelly, "fractional_kelly")
@@ -192,18 +158,15 @@ def moment_matched_return_distribution(
     mu: Sequence[float] | FloatArray,
     covariance: Sequence[Sequence[float]] | FloatArray,
 ) -> tuple[FloatArray, FloatArray]:
-    """Construct an explicit distribution with exactly the supplied moments.
-
-    For ``n`` assets, the distribution has ``2n`` equally likely states.  Its
-    standardized shocks are ``+sqrt(n) e_i`` and ``-sqrt(n) e_i``.  They have
-    mean zero and covariance identity.  If ``L @ L.T = Sigma``, the states
-    ``mu + z @ L.T`` therefore have mean ``mu`` and covariance ``Sigma``.
-
-    This finite distribution is a modelling choice, not a claim that the first
-    two moments uniquely determine return tails.  It makes the expected-log
-    objective fully specified without a finance library or a hidden normality
-    assumption.
-    """
+    # Construct an explicit distribution with exactly the supplied moments.
+    # For ``n`` assets, the distribution has ``2n`` equally likely states.  Its
+    # standardized shocks are ``+sqrt(n) e_i`` and ``-sqrt(n) e_i``.  They have
+    # mean zero and covariance identity.  If ``L @ L.T = Sigma``, the states
+    # ``mu + z @ L.T`` therefore have mean ``mu`` and covariance ``Sigma``.
+    # This finite distribution is a modelling choice, not a claim that the first
+    # two moments uniquely determine return tails.  It makes the expected-log
+    # objective fully specified without a finance library or a hidden normality
+    # assumption.
     mean = np.asarray(mu, dtype=float)
     if mean.ndim != 1 or mean.size == 0:
         raise ValueError("mu must be a non-empty one-dimensional vector.")
@@ -233,7 +196,7 @@ def moment_matched_return_distribution(
 
 @dataclass(frozen=True)
 class MultiAssetKellyResult:
-    """Result of the long-only, unlevered multivariate Kelly optimization."""
+    # Result of the long-only, unlevered multivariate Kelly optimization.
 
     full_kelly_weights: FloatArray
     weights: FloatArray
@@ -254,22 +217,21 @@ def optimize_multivariate_kelly(
     tolerance: float = 1e-12,
     maxiter: int = 1_000,
 ) -> MultiAssetKellyResult:
-    """Maximize multi-asset expected log wealth using SLSQP.
+    # Maximize multi-asset expected log wealth using SLSQP.
 
-    The engine uses the explicit moment-matched distribution made from ``mu``
-    and ``covariance``.  It solves
+    # The engine uses the explicit moment-matched distribution made from ``mu``
+    # and ``covariance``.  It solves
 
-    ``max_w sum_s pi_s log(1 + R_s.T @ w)``
+    # ``max_w sum_s pi_s log(1 + R_s.T @ w)``
 
-    subject to ``0 <= w_i <= max_asset_weight`` and
-    ``sum_i w_i <= max_total_weight``.  The unused allocation is cash with a
-    zero return.  The default cap of one forbids leverage and leaves no way to
-    accidentally put 100% of the bankroll into each of several assets.
+    # subject to ``0 <= w_i <= max_asset_weight`` and
+    # ``sum_i w_i <= max_total_weight``.  The unused allocation is cash with a
+    # zero return.  The default cap of one forbids leverage and leaves no way to
+    # accidentally put 100% of the bankroll into each of several assets.
 
-    Fractional Kelly is applied *after* solving for the full-Kelly vector.  It
-    is a deliberate risk scaling rule, not a claim that the scaled vector is a
-    new unconstrained optimum.
-    """
+    # Fractional Kelly is applied *after* solving for the full-Kelly vector.  It
+    # is a deliberate risk scaling rule, not a claim that the scaled vector is a
+    # new unconstrained optimum.
     scale = _validate_fraction(fractional_kelly, "fractional_kelly")
     max_total_weight = _validate_fraction(max_total_weight, "max_total_weight")
     max_asset_weight = _validate_fraction(max_asset_weight, "max_asset_weight")
@@ -338,7 +300,7 @@ def optimize_multivariate_kelly(
 
 @dataclass(frozen=True)
 class ContinuousKellyResult:
-    """Result under the continuous-time diffusion version of multivariate Kelly."""
+    #Result under the continuous-time diffusion version of multivariate Kelly.
 
     full_kelly_weights: FloatArray
     weights: FloatArray
@@ -354,27 +316,26 @@ def continuous_expected_log_growth(
     covariance: Sequence[Sequence[float]] | FloatArray,
     risk_free_rate: float = 0.0,
 ) -> float:
-    """Return the diffusion-model expected log-growth rate.
+    # Return the diffusion-model expected log-growth rate.
 
-    The continuous model is
+    # The continuous model is
 
-    ``dS_i / S_i = mu_i dt + (L dB)_i,  L L.T = covariance``.
+    # ``dS_i / S_i = mu_i dt + (L dB)_i,  L L.T = covariance``.
 
-    Here ``mu`` is an arithmetic drift *rate* and ``covariance`` is an
-    instantaneous covariance *rate*, both expressed on the same time scale.
-    The returned value is an expected log-growth rate on that scale.
+    # Here ``mu`` is an arithmetic drift *rate* and ``covariance`` is an
+    # instantaneous covariance *rate*, both expressed on the same time scale.
+    # The returned value is an expected log-growth rate on that scale.
 
-    With the unallocated balance held in cash at ``risk_free_rate``, Itô's
-    formula gives
+    # With the unallocated balance held in cash at ``risk_free_rate``, Itô's
+    # formula gives
 
-    ``E[d log(V)] / dt = r_f + w.T @ (mu - r_f) - 0.5 w.T @ Sigma @ w``.
+    # ``E[d log(V)] / dt = r_f + w.T @ (mu - r_f) - 0.5 w.T @ Sigma @ w``.
 
-    Thus the mean and covariance do identify the objective *under this stated
-    diffusion model*.  This should not be confused with an exact one-period
-    simple-return objective, for which the first two moments alone are not
-    enough; use ``optimize_multivariate_kelly`` for the explicit scenario
-    model above.
-    """
+    # Thus the mean and covariance do identify the objective *under this stated
+    # diffusion model*.  This should not be confused with an exact one-period
+    # simple-return objective, for which the first two moments alone are not
+    # enough; use ``optimize_multivariate_kelly`` for the explicit scenario
+    # model above.
     w = np.asarray(weights, dtype=float)
     mean = np.asarray(mu, dtype=float)
     rf = float(risk_free_rate)
@@ -394,7 +355,7 @@ def continuous_log_growth_gradient(
     covariance: Sequence[Sequence[float]] | FloatArray,
     risk_free_rate: float = 0.0,
 ) -> FloatArray:
-    """Return ``mu - r_f - Sigma @ w``, the diffusion Kelly gradient."""
+    # Return ``mu - r_f - Sigma @ w``, the diffusion Kelly gradient.
     w = np.asarray(weights, dtype=float)
     mean = np.asarray(mu, dtype=float)
     rf = float(risk_free_rate)
@@ -417,14 +378,12 @@ def optimize_continuous_multivariate_kelly(
     tolerance: float = 1e-12,
     maxiter: int = 1_000,
 ) -> ContinuousKellyResult:
-    """Solve the requested continuous, correlated multi-asset Kelly problem.
-
-    ``mu`` contains arithmetic drift rates and ``covariance`` contains
-    instantaneous covariance rates on the same time scale. The output is a
-    log-growth rate on that scale. The optimizer is long-only and unlevered:
-    the cash weight is ``1 - sum(weights)``. The function works for any asset
-    count, while the demo below intentionally supplies three assets.
-    """
+    # Solve the requested continuous, correlated multi-asset Kelly problem.
+    # ``mu`` contains arithmetic drift rates and ``covariance`` contains
+    # instantaneous covariance rates on the same time scale. The output is a
+    # log-growth rate on that scale. The optimizer is long-only and unlevered:
+    # the cash weight is ``1 - sum(weights)``. The function works for any asset
+    # count, while the demo below intentionally supplies three assets.
     mean = np.asarray(mu, dtype=float)
     rf = float(risk_free_rate)
     scale = _validate_fraction(fractional_kelly, "fractional_kelly")
@@ -629,22 +588,21 @@ def calculate_performance_metrics(
     risk_free_rate_per_period: float = 0.0,
     periods_per_year: float | None = None,
 ) -> PerformanceMetrics:
-    """Calculate transparent risk/return metrics for consecutive equity values.
+    # Calculate transparent risk/return metrics for consecutive equity values.
 
-    ``risk_free_rate_per_period`` is a simple return on the *same interval* as
-    adjacent observations in ``equity``.  Sharpe ratio is calculated as the
-    arithmetic mean excess simple return divided by sample return volatility
-    (``ddof=1``).  Its value is ``nan`` if fewer than two returns are available
-    or every observed return is identical, because a sample volatility-based
-    Sharpe ratio is then undefined.
+    # ``risk_free_rate_per_period`` is a simple return on the *same interval* as
+    # adjacent observations in ``equity``.  Sharpe ratio is calculated as the
+    # arithmetic mean excess simple return divided by sample return volatility
+    # (``ddof=1``).  Its value is ``nan`` if fewer than two returns are available
+    # or every observed return is identical, because a sample volatility-based
+    # Sharpe ratio is then undefined.
 
-    Provide ``periods_per_year`` only when an interval has a genuine calendar
-    frequency.  Annualized return compounds the geometric per-period return;
-    annualized volatility and Sharpe ratio use the standard iid
-    square-root-of-time convention.  The function requires strictly positive
-    equity values so every period return is well-defined; a ruined path should
-    be reported separately rather than assigned a misleading Sharpe ratio.
-    """
+    # Provide ``periods_per_year`` only when an interval has a genuine calendar
+    # frequency.  Annualized return compounds the geometric per-period return;
+    # annualized volatility and Sharpe ratio use the standard iid
+    # square-root-of-time convention.  The function requires strictly positive
+    # equity values so every period return is well-defined; a ruined path should
+    # be reported separately rather than assigned a misleading Sharpe ratio.
     values = np.asarray(equity, dtype=float)
     if (
         values.ndim != 1
